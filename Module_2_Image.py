@@ -1,5 +1,5 @@
 """
-[ICM_0_module.py]
+[Module_2_Image.py]
 Purpose: Invert cone model
 Author: Meng-Chi Ed Chen
 Date: 2024-03-04
@@ -96,6 +96,7 @@ def enhance_image(path_img, clipLimit, tileGridSize, bsn='2-enh'):#F09_OMcam
     cl = clahe.apply(l_channel)
     limg = cv2.merge((cl, a, b)) # Merge the CLAHE enhanced L-channel with the a and b channel
     enhanced_img = cv2.cvtColor(limg, cv2.COLOR_LAB2BGR) # Converting from LAB Color model to BGR color space
+    
     #[3] Save enhanced image.
     img_ext = os.path.splitext(path_img)[1] # Find file extension so that it works with different image files.
     path_img_enhanced = path_img.replace(img_ext, f'_{bsn}{img_ext}')
@@ -188,7 +189,7 @@ def add_random_noise(image, std=10):
     #[5] Return the noisy image
     return noisy_image
 
-def add_noises_to_batch_images(list_path_img, std, overwrite=True):
+def batch_images_add_noise(list_path_img, std, overwrite=True):
     """
     Add salt-and-pepper noise to a batch of images and overwrite the original images.
     :param list_path_img: List of image file paths.
@@ -211,6 +212,312 @@ def add_noises_to_batch_images(list_path_img, std, overwrite=True):
             raise ValueError('Check if arrimg is none.')
 
     return list_path_img
+
+
+def batch_image_apply_blur(list_path_img, k=9, overwrite=True):
+    """
+    Add salt-and-pepper noise to a batch of images and overwrite the original images.
+    :param list_path_img: List of image file paths.
+    :return: List of paths to the noisy images.
+    """
+    for iter_path in list_path_img:
+        #[1] Read the image
+        arrimg = cv2.imread(iter_path)
+        if arrimg is not None:
+            #[2] Print info
+            bsn = os.path.basename(iter_path)
+            print(f'--Apply blur for {bsn}.')
+            #[3] Add noise
+            blurred_img = cv2.GaussianBlur(arrimg, (k, k), 0) 
+            #[4] Overwrite the original image or not?
+            if not overwrite:
+                iter_path = iter_path.replace('.jpg', '_n.jpg')
+            cv2.imwrite(iter_path, blurred_img) 
+        else:
+            raise ValueError('Check if arrimg is none.')
+
+    return list_path_img
+
+
+
+def print_arrimg_stat(path_or_arr_img, kstd=3, name='Color Statistics', print_status=False):
+    #[1] Check if input is a path or an array
+    if isinstance(path_or_arr_img, str):
+        arr_img = cv2.imread(path_or_arr_img)
+    else:
+        arr_img = path_or_arr_img
+
+    #[2] Check dimension
+    if arr_img.ndim != 3 or arr_img.shape[2] != 3:
+        raise ValueError("Input array must be a 3-channel image array (BGR).")
+
+    #[3] Calculate statistics for each channel
+    b_channel = arr_img[:,:,0]
+    g_channel = arr_img[:,:,1]
+    r_channel = arr_img[:,:,2]
+
+    b_max, b_mean, b_min, b_std = np.max(b_channel), np.mean(b_channel), np.min(b_channel), np.std(b_channel)
+    g_max, g_mean, g_min, g_std = np.max(g_channel), np.mean(g_channel), np.min(g_channel), np.std(g_channel)
+    r_max, r_mean, r_min, r_std = np.max(r_channel), np.mean(r_channel), np.min(r_channel), np.std(r_channel)
+    b_pks, b_nks = b_mean + kstd*b_std, b_mean - kstd*b_std
+    g_pks, g_nks = g_mean + kstd*g_std, g_mean - kstd*g_std
+    r_pks, r_nks = r_mean + kstd*r_std, r_mean - kstd*r_std
+
+    #[4] Create a DataFrame to organize the statistics
+    data = {
+        'Channel': ['B', 'G', 'R'],
+        'Max': [b_max, g_max, r_max],
+        'Mean': [b_mean, g_mean, r_mean],
+        'Min': [b_min, g_min, r_min],
+        'Std': [b_std, g_std, r_std],
+        f'Mean + {kstd} Std': [b_pks, g_pks, r_pks],
+        f'Mean - {kstd} Std': [b_nks, g_nks, r_nks]
+    }
+
+    df_stat = pd.DataFrame(data)
+    df_stat.set_index('Channel', inplace=True)
+    
+    #[5] Print the DataFrame
+    if print_status:
+        print(f'\n[{name}]')
+        print(df_stat.to_string(float_format='%.2f'))
+    
+    #[6] Round the stds we need.
+    b_pks, b_nks = int(b_pks), int(b_nks)
+    g_pks, g_nks = int(g_pks), int(g_nks)
+    r_pks, r_nks = int(r_pks), int(r_nks)
+    
+    return df_stat, b_pks, b_nks, g_pks, g_nks, r_pks, r_nks
+
+
+def generate_strongly_blurred_image_as_blank(path_img, r = 10, blur_times=3, bsn='1-strongBlur'):
+    # Increase r to have larger k. If min(h, w) = 512 and r = 50, k = 11; r = 10, k = 103.
+    #[1] Check input
+    if not isinstance(blur_times, int) or blur_times < 1 or blur_times > 10:
+        raise ValueError(f'blur_times must be an integer between 1 and 10. Received: {blur_times}')
+    
+    #[2] Get size
+    arrimg = cv2.imread(path_img)
+    ext = os.path.splitext(path_img)[1]
+    h, w, c = arrimg.shape
+    
+    #[3] Blur image
+    k = int(min(h, w)/r)*2 + 1
+    print(f'-- Gaussian k = {k}')
+    for i in range(blur_times):
+        arrimg = cv2.GaussianBlur(arrimg, (k, k), 0)
+    
+    #[10] Save the corrected image.
+    path_img_blank = os.path.join(os.path.dirname(path_img), f'{bsn}{ext}')
+    cv2.imwrite(path_img_blank, arrimg)
+    
+    return path_img_blank
+
+def vignetting_correction(path_img, bsn='4-vignetCorr'):
+    print(f'\n[img_vignetting_correction] {os.path.basename(path_img)}')
+    #[1] Set values.
+    ratio_extend = 0.05
+    """
+    ratio_extend: Ratio of averging extention.
+    If ratio_extend = 0.05, it means averaging pixels from 0.45 to 0.55 along width and leangth.
+    """
+    
+    #[3] Read blank image.
+    path_img_blank = generate_strongly_blurred_image_as_blank(path_img, r = 10, blur_times=10, bsn='2-strongBlur')
+    arrimg_blank = cv2.imread(path_img_blank)
+    ext = os.path.splitext(path_img_blank)[1]
+
+    #[5] Calculate image dimension and average center area.
+    h, w, c = arrimg_blank.shape
+    h_center = round(h/2)
+    h_upper = round(h_center + h*ratio_extend)
+    h_lower = round(h_center - h*ratio_extend)
+    
+    w_center = round(w/2)
+    w_upper = round(w_center + w*ratio_extend)
+    w_lower = round(w_center - w*ratio_extend)
+    
+    arr1D_center_color_mean = (arrimg_blank[h_lower:h_upper,w_lower:w_upper].mean(axis=0).mean(axis=0)).astype(int)
+    arr1D_center_color_mean = np.around(arr1D_center_color_mean)
+    
+    #[7] Use sampled color to tile a ndarray.
+    arr3D_center_averaged = np.tile(arr1D_center_color_mean, (h, w, 1))
+
+    #[8] Generate image modifier for color correction.
+    arr_modifier = arrimg_blank - arr3D_center_averaged
+    
+    #[9] Generate corrected image.
+    arrimg = cv2.imread(path_img)
+    arrimg_corrected = arrimg  - arr_modifier
+    
+    #[10] Save the corrected image.
+    path_img_corrected = os.path.join(os.path.dirname(path_img), f'{bsn}{ext}')
+    cv2.imwrite(path_img_corrected, arrimg_corrected)
+    
+    return path_img_corrected
+
+
+def adjust_gamma(path_img, gamma=1.0, bsn='6-gamma'):
+    #[1] Read image
+    arrimg = cv2.imread(path_img)
+    ext = os.path.splitext(path_img)[1]
+    
+    #[2] Gamma correction
+    invGamma = 1.0 / gamma
+    table = np.array([((i / 255.0) ** invGamma) * 255 for i in np.arange(0, 256)]).astype("uint8")
+    arrimg_gamma = cv2.LUT(arrimg, table)
+
+    #[10] Save the corrected image.
+    path_img_corrected = os.path.join(os.path.dirname(path_img), f'{bsn}{ext}')
+    cv2.imwrite(path_img_corrected, arrimg_gamma)
+    
+    return path_img_corrected
+
+
+def color_balance(path_img, adjust_percent=1, bsn='7-color-balance'):
+    #[1] Read image
+    arrimg = cv2.imread(path_img)
+    ext = os.path.splitext(path_img)[1]
+    
+    #[2] Color balance
+    for channel in range(arrimg.shape[2]):
+        # Get the current channel
+        c = arrimg[:, :, channel]
+        
+        # Find the low and high percentiles
+        total = c.shape[0] * c.shape[1]
+        lower_bound = np.percentile(c, adjust_percent)
+        upper_bound = np.percentile(c, 100 - adjust_percent)
+        
+        # Clip and rescale the intensities
+        c = np.clip(c, lower_bound, upper_bound)
+        c = ((c - lower_bound) / (upper_bound - lower_bound) * 255).astype(np.uint8)
+        arrimg[:, :, channel] = c
+
+    #[10] Save the corrected image.
+    path_img_corrected = os.path.join(os.path.dirname(path_img), f'{bsn}{ext}')
+    cv2.imwrite(path_img_corrected, arrimg)
+    
+    return path_img_corrected
+
+
+
+def normalize_single_channel(path_img, channel, lower_bound, upper_bound, bsn='7-C'):
+    #[1] Read image
+    arrimg = cv2.imread(path_img)
+    ext = os.path.splitext(path_img)[1]
+    
+    #[2] Check if lower_bound and upper_bound are within the valid range
+    if (not (0 <= lower_bound <= 255)) or (not (0 <= upper_bound <= 255)):
+        print(f'lower_bound({lower_bound}) and upper_bound({upper_bound}) must be between 0 and 255.')
+    
+    #[3] Color balance
+    channel_index = {'B': 0, 'G': 1, 'R': 2}
+    if channel in channel_index:
+        #[4] Get the channel data
+        c = arrimg[:, :, channel_index[channel]]
+        
+        #[5] Normalize the channel data
+        mask = (c >= lower_bound) & (c <= upper_bound)
+        c_normalized = np.zeros_like(c)
+        c_normalized[mask] = ((c[mask] - lower_bound) / (upper_bound - lower_bound) * 255).astype(np.uint8)
+     
+        #[6] Update the image channel
+        arrimg[:, :, channel_index[channel]] = c_normalized
+    else:
+        raise ValueError(f'Invalid channel name: {channel}')
+
+    #[7] Save the corrected image
+    bsn = bsn.replace('C', channel)
+    path_img_enh = os.path.join(os.path.dirname(path_img), f'{bsn}_{lower_bound}~{upper_bound}{ext}')
+    cv2.imwrite(path_img_enh, arrimg)
+    
+    return path_img_enh
+
+
+
+
+def enhance_single_channel(path_img, channel, clip_point, move_up=True, bsn='7-C'):
+    #[1] Read image
+    arrimg = cv2.imread(path_img)
+    ext = os.path.splitext(path_img)[1]
+    
+    #[2] Check if clip_point is within the valid range
+    if not (0 <= clip_point <= 255):
+        raise ValueError('clip_point must be between 0 and 255')
+    
+    #[3] Color balance
+    channel_index = {'B': 0, 'G': 1, 'R': 2}
+    if channel in channel_index:
+        #[4] Get the channel data
+        c = arrimg[:, :, channel_index[channel]]
+        
+        #[5] Normalize the channel data
+        c = np.clip(c, 0, 255)  # Ensure values are within 0-255
+        if move_up:      # Normalize between clip_point-255
+            c = ((c / 255) * (255 - clip_point) + clip_point).astype(np.uint8)
+        else:           # Normalize between 0-clip_point
+            c = ((c / 255) * clip_point).astype(np.uint8)
+        
+        #[6] Update the image channel
+        arrimg[:, :, channel_index[channel]] = c
+    else:
+        raise ValueError(f'Invalid channel name: {channel}')
+
+    #[7] Save the corrected image
+    bsn = bsn.replace('C', channel)
+    path_img_enh = os.path.join(os.path.dirname(path_img), f'{bsn}{clip_point}{move_up}{ext}')
+    cv2.imwrite(path_img_enh, arrimg)
+    
+    return path_img_enh
+
+
+def enhance_contrast_of_single_channel(path_img, channel, clip_point, push_range, bsn='7-C'):
+    #[1] Read image
+    arrimg = cv2.imread(path_img)
+    ext = os.path.splitext(path_img)[1]
+    
+    #[2] Validate inputs
+    if not (32 <= clip_point <= 224):
+        raise ValueError('clip_point must be between 32 and 224')
+    if push_range > 64:
+        raise ValueError('push_range must be 64 or less')
+    
+    #[3] Color balance
+    # Map the channel to the corresponding index
+    channel_index = {'B': 0, 'G': 1, 'R': 2}
+    if channel in channel_index:
+        #[4] Get the channel data
+        c = arrimg[:, :, channel_index[channel]]
+    else:
+        raise ValueError(f'Invalid channel name: {channel}')
+    
+    #[5] Define the new ranges
+    lower_bound = clip_point - push_range // 2
+    upper_bound = clip_point + push_range // 2
+    
+    #[6] Normalize values between 0 and clip_point to 0 and lower_bound
+    mask1 = c <= clip_point
+    c[mask1] = np.interp(c[mask1], [0, clip_point], [0, lower_bound])
+    
+    #[7] Normalize values between clip_point and 255 to upper_bound and 255
+    mask2 = c > clip_point
+    c[mask2] = np.interp(c[mask2], [clip_point, 255], [upper_bound, 255])
+    
+    #[8] Replace the channel data in the original image
+    arrimg[:, :, channel_index[channel]] = c
+    
+    #[9] Modify the base name
+    bsn = bsn.replace('C', channel)
+    
+    #[10] Save the corrected image
+    path_img_enh = os.path.join(os.path.dirname(path_img), f'{bsn}{ext}')
+    cv2.imwrite(path_img_enh, arrimg)
+    
+    #[11] Return the path to the enhanced image
+    return path_img_enh
+
+
 
 #[1] Image - End
 
@@ -345,9 +652,9 @@ def find_good_matches_OpponentSIFT(img1, img2, LR=0.7):
     
     #[5] Filter matches using the Lowe's ratio test
     list_good_matches = []
-    for m, n in matches:
-        if m.distance < LR * n.distance:
-            list_good_matches.append(m)
+    for best_match, second_match in matches:
+        if best_match.distance < LR * second_match.distance:
+            list_good_matches.append(best_match)
 
     return list_good_matches, keypoints1, keypoints2
 
@@ -428,8 +735,6 @@ def refining_match_quality(list_coor1_x, list_coor1_y
         list_f1_coor1_x, list_f1_coor1_y = [], []
         list_f1_d_x, list_f1_d_y, list_f1_d_l = [], [], []
         
-
-        
         #[6] First filtering
         f1_d_l_lower_lmt, f1_d_l_upper_lmt\
             = 5, f0_mean_d_l * f1_dl_upper_limit_ratio
@@ -445,7 +750,6 @@ def refining_match_quality(list_coor1_x, list_coor1_y
                 list_f1_d_x.append(list_d_x[i])
                 list_f1_d_y.append(list_d_y[i])
                 list_f1_d_l.append(list_d_l[i])
-        
         
         #[Second Filtering]
         #[10] Before second filtering, initiate empty lists and gather information.
@@ -567,6 +871,7 @@ def mark_good_matches_on_img(list_d_l, list_coor2_x, list_coor2_y, large_font, p
     print(f'[list_d_l] {list_d_l[:5]}')
     print(f'[list_coor2_x] {list_coor2_x[:5]}')
     print(f'[list_coor2_y] {list_coor2_y[:5]}')
+    
     #[1] Load the image from the given path
     img2 = cv2.imread(path_image)
     if img2 is None:
