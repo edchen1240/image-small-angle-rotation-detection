@@ -1,5 +1,5 @@
 """
-[ICM_0_module.py]
+[Module_5_Image_File_Info.py]
 Purpose: Invert cone model
 Author: Meng-Chi Ed Chen
 Date: 2024-03-04
