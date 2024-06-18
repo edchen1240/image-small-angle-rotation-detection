@@ -712,14 +712,14 @@ def RANSAC_filtering_xyz(arr_x, arr_y, arr_z):
 def refining_match_quality(list_coor1_x, list_coor1_y
                     , list_coor2_x, list_coor2_y
                     , list_d_x, list_d_y, list_d_l
-                    , f1_dl_upper_limit_ratio, f2_dl_std_limit, dir, cnt):
+                    , f1_dl_upper_limit, f2_dl_std_limit, dir, cnt):
     """
     [d_std_limit] is important. 2 is too lose, 1 is not tight enough. 0.5 is better. 
     """
     record_df_record =True
     df_stat=None
     #[1] Remove outliers
-    if f1_dl_upper_limit_ratio is not None and f1_dl_upper_limit_ratio > 0 :
+    if f1_dl_upper_limit is not None and f1_dl_upper_limit > 0 :
         
         #[2] Record dataframe df_record_f0
         if record_df_record:
@@ -736,9 +736,8 @@ def refining_match_quality(list_coor1_x, list_coor1_y
         list_f1_d_x, list_f1_d_y, list_f1_d_l = [], [], []
         
         #[6] First filtering
-        f1_d_l_lower_lmt, f1_d_l_upper_lmt\
-            = 5, f0_mean_d_l * f1_dl_upper_limit_ratio
-        print(f'\n--[First filtering]\n--Removing displacement outliers exceeding {f1_dl_upper_limit_ratio} times of the mean value.')
+        f1_d_l_lower_lmt, f1_d_l_upper_lmt = 5, f1_dl_upper_limit
+        print(f'\n--[First filtering]\n--Removing displacement outliers exceeding {f1_dl_upper_limit} pixel.')
         print(f'--Retaining displacements within the range of {f1_d_l_lower_lmt:.2f} to {f1_d_l_upper_lmt:.2f} pixels.')
         for i, iter_d_l in enumerate(list_d_l):
             if f1_d_l_lower_lmt <= iter_d_l and iter_d_l <= f1_d_l_upper_lmt:
